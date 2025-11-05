@@ -29,17 +29,58 @@ app.post('/api/test-concurrency', async (req, res) => {
         const promise = axios.post(`${apiUrl}/v1/chat/completions`, {
             model: model,
             messages: [{ role: 'user', content: prompt }],
-            max_tokens: maxTokensValue
+            max_tokens: maxTokensValue,
+            stream: true
         }, {
             headers: {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
-            }
-        }).then(response => ({
-            id: i + 1,
-            status: 'success',
-            result: response.data.choices[0].message.content
-        })).catch(error => ({
+            },
+            responseType: 'stream'
+        }).then(response => {
+            return new Promise((resolve, reject) => {
+                let content = '';
+                const stream = response.data;
+                stream.on('data', (chunk) => {
+                    const lines = chunk.toString().split('\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') {
+                                resolve({
+                                    id: i + 1,
+                                    status: 'success',
+                                    result: content.trim().split('\n').slice(-3).join('\n') // Last 3 lines
+                                });
+                                return;
+                            }
+                            try {
+                                const parsed = JSON.parse(data);
+                                if (parsed.choices && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                    content += parsed.choices[0].delta.content;
+                                }
+                            } catch (e) {
+                                // Ignore parsing errors for now
+                            }
+                        }
+                    }
+                });
+                stream.on('end', () => {
+                    resolve({
+                        id: i + 1,
+                        status: 'success',
+                        result: content.trim().split('\n').slice(-3).join('\n') // Last 3 lines
+                    });
+                });
+                stream.on('error', (error) => {
+                    reject({
+                        id: i + 1,
+                        status: 'error',
+                        result: error.message
+                    });
+                });
+            });
+        }).catch(error => ({
             id: i + 1,
             status: 'error',
             result: error.message
