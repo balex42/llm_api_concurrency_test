@@ -83,7 +83,9 @@
             <tr>
                 <th>Request ID</th>
                 <th>Status</th>
-                <th>Result</th>
+                <th>Generated Text (last 100 chars)</th>
+                <th>Tokens/s</th>
+                <th>Total Tokens</th>
             </tr>
         </thead>
         <tbody>
@@ -135,14 +137,31 @@
             if (!row) {
                 row = document.createElement('tr');
                 row.setAttribute('data-id', data.id);
-                row.innerHTML = `<td>${data.id}</td><td></td><td></td>`;
+                row.innerHTML = `<td>${data.id}</td><td></td><td></td><td></td><td></td>`;
                 tbody.appendChild(row);
             }
             const cells = row.children;
             cells[1].textContent = data.status;
             cells[1].className = data.status;
-            if (data.result) {
-                cells[2].textContent = data.result;
+            
+            if (data.generatedText) {
+                // Show only last 100 characters
+                const text = data.generatedText;
+                cells[2].textContent = text.length > 100 ? '...' + text.slice(-100) : text;
+                cells[2].title = text; // Show full text on hover
+            }
+            
+            if (data.tokensPerSecond !== undefined) {
+                cells[3].textContent = data.tokensPerSecond.toFixed(2);
+            }
+            
+            if (data.totalTokens !== undefined) {
+                cells[4].textContent = data.totalTokens;
+            }
+            
+            if (data.error) {
+                cells[2].textContent = data.error;
+                cells[2].className = 'error';
             }
         }
 

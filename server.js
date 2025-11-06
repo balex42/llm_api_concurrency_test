@@ -40,24 +40,38 @@ app.post('/api/test-concurrency', async (req, res) => {
         }).then(response => {
             return new Promise((resolve, reject) => {
                 let content = '';
+                let totalTokens = 0;
+                const startTime = Date.now();
+                let firstTokenTime = null;
                 const stream = response.data;
+                
                 stream.on('data', (chunk) => {
                     const lines = chunk.toString().split('\n');
                     for (const line of lines) {
                         if (line.startsWith('data: ')) {
                             const data = line.slice(6);
                             if (data === '[DONE]') {
+                                const endTime = Date.now();
+                                const duration = (endTime - (firstTokenTime || startTime)) / 1000; // seconds
+                                const tokensPerSecond = duration > 0 ? totalTokens / duration : 0;
+                                
                                 resolve({
                                     id: i + 1,
                                     status: 'success',
-                                    result: content.trim().split('\n').slice(-3).join('\n') // Last 3 lines
+                                    generatedText: content.trim(),
+                                    totalTokens: totalTokens,
+                                    tokensPerSecond: tokensPerSecond
                                 });
                                 return;
                             }
                             try {
                                 const parsed = JSON.parse(data);
                                 if (parsed.choices && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                    if (firstTokenTime === null) {
+                                        firstTokenTime = Date.now();
+                                    }
                                     content += parsed.choices[0].delta.content;
+                                    totalTokens++;
                                 }
                             } catch (e) {
                                 // Ignore parsing errors for now
@@ -66,24 +80,30 @@ app.post('/api/test-concurrency', async (req, res) => {
                     }
                 });
                 stream.on('end', () => {
+                    const endTime = Date.now();
+                    const duration = (endTime - (firstTokenTime || startTime)) / 1000; // seconds
+                    const tokensPerSecond = duration > 0 ? totalTokens / duration : 0;
+                    
                     resolve({
                         id: i + 1,
                         status: 'success',
-                        result: content.trim().split('\n').slice(-3).join('\n') // Last 3 lines
+                        generatedText: content.trim(),
+                        totalTokens: totalTokens,
+                        tokensPerSecond: tokensPerSecond
                     });
                 });
                 stream.on('error', (error) => {
                     reject({
                         id: i + 1,
                         status: 'error',
-                        result: error.message
+                        error: error.message
                     });
                 });
             });
         }).catch(error => ({
             id: i + 1,
             status: 'error',
-            result: error.message
+            error: error.message
         })).then(result => {
             res.write(JSON.stringify(result) + '\n');
             return result;
