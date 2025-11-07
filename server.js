@@ -38,7 +38,7 @@ app.post('/api/generate-prompts', async (req, res) => {
                 prompts: {
                     type: 'array',
                     minItems: 1,
-                    maxItems: Math.max(1, Math.min(100, Number(numPrompts) || 1)),
+                    maxItems: Math.max(1, Math.min(500, Number(numPrompts) || 1)),
                     items: { type: 'string' }
                 }
             }
@@ -94,7 +94,7 @@ app.post('/api/generate-prompts', async (req, res) => {
 
 // Endpoint to send concurrent requests
 app.post('/api/test-concurrency', async (req, res) => {
-    const { prompts, apiUrl, apiKey, model, maxTokens } = req.body;
+    const { prompts, apiUrl, apiKey, model, maxTokens, concurrency } = req.body;
 
     if (!Array.isArray(prompts) || prompts.length === 0 || !apiUrl || !apiKey || !model) {
         return res.status(400).json({ error: 'Missing required fields: prompts[], apiUrl, apiKey, model' });
@@ -102,104 +102,87 @@ app.post('/api/test-concurrency', async (req, res) => {
 
     const maxTokensValue = maxTokens || 100;
     const count = prompts.length;
+    const maxParallel = Math.max(1, Math.min(count, Number(concurrency) || 20));
 
     res.setHeader('Content-Type', 'application/x-ndjson');
     res.setHeader('Cache-Control', 'no-cache');
 
-    const requests = [];
-    for (let i = 0; i < count; i++) {
-        const contentPrompt = String(prompts[i]);
-        res.write(JSON.stringify({ id: i + 1, status: 'started', prompt: contentPrompt }) + '\n');
-        const promise = axios.post(`${apiUrl}/v1/chat/completions`, {
-            model: model,
-            messages: [{ role: 'user', content: contentPrompt }],
-            max_tokens: maxTokensValue,
-            stream: true
-        }, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
-            },
-            responseType: 'stream'
-        }).then(response => {
-            return new Promise((resolve, reject) => {
-                let content = '';
-                let totalTokens = 0;
-                const startTime = Date.now();
-                let firstTokenTime = null;
-                const stream = response.data;
-                
-                stream.on('data', (chunk) => {
-                    const lines = chunk.toString().split('\n');
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = line.slice(6);
-                            if (data === '[DONE]') {
-                                const endTime = Date.now();
-                                const duration = (endTime - (firstTokenTime || startTime)) / 1000; // seconds
-                                const tokensPerSecond = duration > 0 ? totalTokens / duration : 0;
-                                
-                                resolve({
-                                    id: i + 1,
-                                    status: 'success',
-                                    prompt: contentPrompt,
-                                    generatedText: content.trim(),
-                                    totalTokens: totalTokens,
-                                    tokensPerSecond: tokensPerSecond
-                                });
-                                return;
-                            }
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.choices && parsed.choices[0].delta && parsed.choices[0].delta.content) {
-                                    if (firstTokenTime === null) {
-                                        firstTokenTime = Date.now();
-                                    }
-                                    content += parsed.choices[0].delta.content;
-                                    totalTokens++;
+    // Request runner with bounded concurrency
+    let next = 0;
+    let running = 0;
+    let completed = 0;
+    await new Promise((resolveAll) => {
+        const launchNext = () => {
+            while (running < maxParallel && next < count) {
+                const idx = next++;
+                const requestId = idx + 1;
+                const contentPrompt = String(prompts[idx]);
+                running++;
+                res.write(JSON.stringify({ id: requestId, status: 'started', prompt: contentPrompt }) + '\n');
+
+                axios.post(`${apiUrl}/v1/chat/completions`, {
+                    model: model,
+                    messages: [{ role: 'user', content: contentPrompt }],
+                    max_tokens: maxTokensValue,
+                    stream: true
+                }, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    responseType: 'stream'
+                }).then(response => new Promise((resolve, reject) => {
+                    let content = '';
+                    let totalTokens = 0;
+                    const startTime = Date.now();
+                    let firstTokenTime = null;
+                    const stream = response.data;
+                    stream.on('data', (chunk) => {
+                        const lines = chunk.toString().split('\n');
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const data = line.slice(6);
+                                if (data === '[DONE]') {
+                                    const endTime = Date.now();
+                                    const duration = (endTime - (firstTokenTime || startTime)) / 1000;
+                                    const tokensPerSecond = duration > 0 ? totalTokens / duration : 0;
+                                    resolve({ id: requestId, status: 'success', prompt: contentPrompt, generatedText: content.trim(), totalTokens, tokensPerSecond });
+                                    return;
                                 }
-                            } catch (e) {
-                                // Ignore parsing errors for now
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    if (parsed.choices && parsed.choices[0].delta && parsed.choices[0].delta.content) {
+                                        if (firstTokenTime === null) firstTokenTime = Date.now();
+                                        content += parsed.choices[0].delta.content;
+                                        totalTokens++;
+                                    }
+                                } catch (_) { /* ignore */ }
                             }
                         }
+                    });
+                    stream.on('end', () => {
+                        const endTime = Date.now();
+                        const duration = (endTime - (firstTokenTime || startTime)) / 1000;
+                        const tokensPerSecond = duration > 0 ? totalTokens / duration : 0;
+                        resolve({ id: requestId, status: 'success', prompt: contentPrompt, generatedText: content.trim(), totalTokens, tokensPerSecond });
+                    });
+                    stream.on('error', (error) => {
+                        reject({ id: requestId, status: 'error', prompt: contentPrompt, error: error.message });
+                    });
+                })).catch(err => err).then(result => {
+                    res.write(JSON.stringify(result) + '\n');
+                    running--;
+                    completed++;
+                    if (completed >= count && running === 0) {
+                        resolveAll();
+                    } else {
+                        launchNext();
                     }
                 });
-                stream.on('end', () => {
-                    const endTime = Date.now();
-                    const duration = (endTime - (firstTokenTime || startTime)) / 1000; // seconds
-                    const tokensPerSecond = duration > 0 ? totalTokens / duration : 0;
-                    
-                    resolve({
-                        id: i + 1,
-                        status: 'success',
-                        prompt: contentPrompt,
-                        generatedText: content.trim(),
-                        totalTokens: totalTokens,
-                        tokensPerSecond: tokensPerSecond
-                    });
-                });
-                stream.on('error', (error) => {
-                    reject({
-                        id: i + 1,
-                        status: 'error',
-                        prompt: contentPrompt,
-                        error: error.message
-                    });
-                });
-            });
-        }).catch(error => ({
-            id: i + 1,
-            status: 'error',
-            prompt: contentPrompt,
-            error: error.message
-        })).then(result => {
-            res.write(JSON.stringify(result) + '\n');
-            return result;
-        });
-        requests.push(promise);
-    }
-
-    await Promise.all(requests);
+            }
+        };
+        launchNext();
+    });
     res.end();
 });
 

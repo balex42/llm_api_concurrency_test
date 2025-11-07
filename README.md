@@ -20,7 +20,7 @@ npm start
 
 ## What it does
 
-- Generates a list of prompts via LLM using structured JSON output (with a graceful fallback if schema is unsupported)
+- Generates a list of prompts via LLM using structured JSON output (with a graceful fallback if schema is unsupported). You can now request up to 500 prompts in one generation batch.
 - Sends one concurrent request per prompt to `/v1/chat/completions` and streams results live
 - Shows per‑request status, prompt snippet, last part of the generated text, tokens/s, and total “tokens” count
 - Right‑click any row to view the full prompt and output in a scrollable modal and copy either to clipboard
@@ -72,6 +72,9 @@ Prompt generation uses structured outputs when supported:
 
 ## Notes
 
-- Concurrency equals the number of prompts you provide.
+- Concurrency equals the number of prompts you provide. You can tune parallelism separately with the Concurrency field (defaults to 20). If you generate hundreds of prompts, they will be processed in waves respecting the concurrency limit.
+
+Safety note:
+- Large batches can trigger provider rate limits or timeouts. If you see errors or slowdowns, reduce Concurrency or split batches. As a rule of thumb, keep prompts <= Concurrency × 5 per run for best stability.
 - Use the “Append \no_think” checkbox to inhibit reasoning on Qwen models by appending a newline + `\no_think` to each prompt.
 - Hovering over the prompt or generated text cells shows a tooltip with the full content; use right‑click for the scrollable modal.
