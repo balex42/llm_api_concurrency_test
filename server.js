@@ -10,25 +10,109 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
+// Generate prompts first using structured output (json schema) with fallback
+app.post('/api/generate-prompts', async (req, res) => {
+    const { apiUrl, apiKey, model, instructions, numPrompts } = req.body;
+
+    if (!apiUrl || !apiKey || !model || !instructions || !numPrompts) {
+        return res.status(400).json({ error: 'Missing required fields: apiUrl, apiKey, model, instructions, numPrompts' });
+    }
+
+    const headers = {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+    };
+
+    const systemPrompt = `You generate diverse, high-quality prompts for testing LLM inference.\n` +
+        `Return ONLY JSON matching the provided JSON schema. No extra text, no code fences.`;
+    const userPrompt = `Generate ${numPrompts} high-quality, diverse prompts following these instructions:\n\n${instructions}\n\n` +
+        `Ensure each prompt is self-contained and suitable for a chat completion API. Keep them concise.`;
+
+    const jsonSchema = {
+        name: 'prompt_list',
+        schema: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['prompts'],
+            properties: {
+                prompts: {
+                    type: 'array',
+                    minItems: 1,
+                    maxItems: Math.max(1, Math.min(100, Number(numPrompts) || 1)),
+                    items: { type: 'string' }
+                }
+            }
+        }
+    };
+
+    // First attempt: structured output via response_format json_schema (OpenAI-compatible)
+    try {
+        const resp = await axios.post(`${apiUrl}/v1/chat/completions`, {
+            model,
+            temperature: 0.7,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt }
+            ],
+            response_format: { type: 'json_schema', json_schema: jsonSchema },
+            stream: false
+        }, { headers });
+
+        const content = resp.data?.choices?.[0]?.message?.content;
+        let parsed;
+        try {
+            parsed = content && JSON.parse(content);
+        } catch (_) {
+            // Try to strip code fences if present
+            const stripped = String(content || '').replace(/^```(?:json)?\n|```$/g, '').trim();
+            parsed = JSON.parse(stripped);
+        }
+        const prompts = Array.isArray(parsed?.prompts) ? parsed.prompts : [];
+        return res.json({ prompts });
+    } catch (err) {
+        // Fallback: ask for strict JSON without schema
+        try {
+            const resp2 = await axios.post(`${apiUrl}/v1/chat/completions`, {
+                model,
+                temperature: 0.7,
+                messages: [
+                    { role: 'system', content: 'Return ONLY valid JSON with shape {"prompts": string[]} — no prose, no code fences.' },
+                    { role: 'user', content: userPrompt }
+                ],
+                stream: false
+            }, { headers });
+            const content2 = resp2.data?.choices?.[0]?.message?.content;
+            const stripped2 = String(content2 || '').replace(/^```(?:json)?\n|```$/g, '').trim();
+            const parsed2 = JSON.parse(stripped2);
+            const prompts2 = Array.isArray(parsed2?.prompts) ? parsed2.prompts : [];
+            return res.json({ prompts: prompts2 });
+        } catch (err2) {
+            return res.status(500).json({ error: `Prompt generation failed: ${err2?.response?.data?.error?.message || err2.message}` });
+        }
+    }
+});
+
 // Endpoint to send concurrent requests
 app.post('/api/test-concurrency', async (req, res) => {
-    const { prompt, numRequests, apiUrl, apiKey, model, maxTokens } = req.body;
+    const { prompts, apiUrl, apiKey, model, maxTokens } = req.body;
 
-    if (!prompt || !numRequests || !apiUrl || !apiKey || !model) {
-        return res.status(400).json({ error: 'Missing required fields: prompt, numRequests, apiUrl, apiKey, model' });
+    if (!Array.isArray(prompts) || prompts.length === 0 || !apiUrl || !apiKey || !model) {
+        return res.status(400).json({ error: 'Missing required fields: prompts[], apiUrl, apiKey, model' });
     }
 
     const maxTokensValue = maxTokens || 100;
+    const count = prompts.length;
 
     res.setHeader('Content-Type', 'application/x-ndjson');
     res.setHeader('Cache-Control', 'no-cache');
 
     const requests = [];
-    for (let i = 0; i < numRequests; i++) {
-        res.write(JSON.stringify({ id: i + 1, status: 'started' }) + '\n');
+    for (let i = 0; i < count; i++) {
+        const contentPrompt = String(prompts[i]);
+        res.write(JSON.stringify({ id: i + 1, status: 'started', prompt: contentPrompt }) + '\n');
         const promise = axios.post(`${apiUrl}/v1/chat/completions`, {
             model: model,
-            messages: [{ role: 'user', content: prompt }],
+            messages: [{ role: 'user', content: contentPrompt }],
             max_tokens: maxTokensValue,
             stream: true
         }, {
@@ -58,6 +142,7 @@ app.post('/api/test-concurrency', async (req, res) => {
                                 resolve({
                                     id: i + 1,
                                     status: 'success',
+                                    prompt: contentPrompt,
                                     generatedText: content.trim(),
                                     totalTokens: totalTokens,
                                     tokensPerSecond: tokensPerSecond
@@ -87,6 +172,7 @@ app.post('/api/test-concurrency', async (req, res) => {
                     resolve({
                         id: i + 1,
                         status: 'success',
+                        prompt: contentPrompt,
                         generatedText: content.trim(),
                         totalTokens: totalTokens,
                         tokensPerSecond: tokensPerSecond
@@ -96,6 +182,7 @@ app.post('/api/test-concurrency', async (req, res) => {
                     reject({
                         id: i + 1,
                         status: 'error',
+                        prompt: contentPrompt,
                         error: error.message
                     });
                 });
@@ -103,6 +190,7 @@ app.post('/api/test-concurrency', async (req, res) => {
         }).catch(error => ({
             id: i + 1,
             status: 'error',
+            prompt: contentPrompt,
             error: error.message
         })).then(result => {
             res.write(JSON.stringify(result) + '\n');

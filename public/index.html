@@ -6,83 +6,208 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Concurrency Test App</title>
     <style>
+        :root {
+            --bg: #0f172a;
+            --bg-soft: #111827;
+            --card: #0b1220;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --primary: #3b82f6;
+            --primary-600: #2563eb;
+            --border: #1f2937;
+            --success: #10b981;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        * { box-sizing: border-box; }
+
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+            margin: 0;
+            background: radial-gradient(1200px 800px at 20% -10%, #1f2937 0%, transparent 60%),
+                        radial-gradient(1000px 600px at 100% 0%, #111827 0%, transparent 60%),
+                        var(--bg);
+            color: var(--text);
         }
 
-        form {
-            margin-bottom: 20px;
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px;
         }
 
-        label {
+        h1 {
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            margin: 0 0 16px 0;
+        }
+        .subtitle {
+            color: var(--muted);
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px 18px 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.03);
+            backdrop-filter: blur(6px);
+            margin-bottom: 18px;
+        }
+
+        form label {
             display: block;
-            margin-top: 10px;
+            color: var(--muted);
+            font-size: 13px;
+            margin: 14px 0 6px;
         }
 
-        input,
-        button {
-            padding: 8px;
-            margin-top: 5px;
-        }
-
-        table {
-            border-collapse: collapse;
+        input[type="text"], input[type="password"], input[type="number"], textarea, select {
             width: 100%;
+            background: #0b1220;
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            outline: none;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        textarea { resize: vertical; }
+        input:focus, textarea:focus, select:focus {
+            border-color: #345ada;
+            box-shadow: 0 0 0 3px rgba(59,130,246,.15);
         }
 
-        th,
-        td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+        .btn {
+            appearance: none;
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(59,130,246,0.18), rgba(59,130,246,0.12));
+            color: #eaf1ff;
+            padding: 10px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform .06s ease, background .15s ease, border-color .15s ease;
+        }
+        .btn:hover { transform: translateY(-1px); border-color: #345ada; }
+        .btn:active { transform: translateY(0); }
+        .btn.secondary {
+            background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.04));
+            color: var(--text);
+        }
+        .btn.danger {
+            background: linear-gradient(180deg, rgba(239,68,68,0.18), rgba(239,68,68,0.12));
+            border-color: rgba(239,68,68,0.35);
         }
 
-        th {
-            background-color: #f2f2f2;
-        }
+        .section-title { margin: 4px 0 10px; font-size: 16px; }
 
-        .success {
-            color: green;
+        .table-wrapper {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            background: #0b1220;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+            max-height: 55vh;
+            overflow: auto;
         }
+        table { border-collapse: separate; border-spacing: 0; width: 100%; }
+        thead th {
+            position: sticky; top: 0; z-index: 1;
+            background: #0e1628;
+            color: var(--muted);
+            font-weight: 700;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: .04em;
+            border-bottom: 1px solid var(--border);
+            padding: 10px 12px;
+        }
+        tbody td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        tbody tr:nth-child(odd) { background: rgba(255,255,255,0.01); }
 
-        .error {
-            color: red;
+        td.status-cell { width: 120px; }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: .02em;
         }
+        td.success .badge { background: rgba(16,185,129,.15); color: #34d399; border: 1px solid rgba(16,185,129,.3); }
+        td.error .badge   { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+        td.started .badge { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+
+        td.generated { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        td.generated code { white-space: pre-wrap; word-break: break-word; }
+
+        .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 12px; }
+        .muted { color: var(--muted); font-size: 13px; }
     </style>
 </head>
 
 <body>
+    <div class="container">
     <h1>OpenAI API Concurrency Test</h1>
+    <div class="subtitle">Generate prompts with an LLM, then run concurrent completions while tracking speed.</div>
+    <div class="card">
     <form id="testForm">
         <label for="apiUrl">API URL:</label>
         <input type="text" id="apiUrl" placeholder="https://api.openai.com" required>
 
+    <label for="model">Model:</label>
+    <input type="text" id="model" placeholder="gpt-3.5-turbo" required>
+
         <label for="apiKey">API Key:</label>
         <input type="password" id="apiKey" required>
 
-        <label for="prompt">Prompt:</label>
-        <textarea id="prompt" rows="4" required></textarea>
+        <h3>Generate Prompts (optional)</h3>
+        <label for="promptInstructions">Prompt Instructions:</label>
+        <textarea id="promptInstructions" rows="4" placeholder="Describe how the prompts should be generated (domain, style, constraints, etc.)"></textarea>
 
-        <label for="numRequests">Number of Requests:</label>
-        <input type="number" id="numRequests" min="1" max="100" required>
+        <label for="numPrompts">Number of Prompts to Generate:</label>
+        <input type="number" id="numPrompts" min="1" max="100" value="5">
 
-        <label for="model">Model:</label>
-        <input type="text" id="model" placeholder="gpt-3.5-turbo" required>
+        <div class="actions">
+            <button type="button" class="btn" id="generatePromptsBtn">Generate Prompts</button>
+        </div>
+
+        <label for="generatedPrompts">Generated Prompts (editable, one per line): <span id="generatedPromptsCount"></span></label>
+        <textarea id="generatedPrompts" rows="6" placeholder="Generated prompts will appear here, one per line..."></textarea>
+
+        <label for="appendNoThink" style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+            <input type="checkbox" id="appendNoThink"> Append "\\no_think" to each prompt (newline + \\no_think) — useful to disable reasoning on Qwen
+        </label>
+
+    <!-- Removed old single-prompt + numRequests inputs -->
 
         <label for="maxTokens">Max Tokens:</label>
         <input type="number" id="maxTokens" min="1" value="100" required>
 
-        <button type="submit">Start Test</button>
+        <div class="actions">
+            <button type="button" class="btn secondary" id="startWithPromptsBtn">Start Test with Generated Prompts</button>
+        </div>
     </form>
+    </div>
 
-    <h2>Results</h2>
-    <button id="clearButton">Clear Results</button>
+    <div class="card">
+    <div class="header-row">
+        <h2 class="section-title">Results</h2>
+        <div class="muted">Only the last 100 chars of text are shown per row.</div>
+        <div style="flex:1"></div>
+        <button id="clearButton" class="btn danger">Clear Results</button>
+    </div>
+    <div class="table-wrapper">
     <table id="resultsTable">
         <thead>
             <tr>
                 <th>Request ID</th>
                 <th>Status</th>
+                <th>Prompt (first 100 chars)</th>
                 <th>Generated Text (last 100 chars)</th>
                 <th>Tokens/s</th>
                 <th>Total Tokens</th>
@@ -91,25 +216,105 @@
         <tbody>
         </tbody>
     </table>
+    </div>
+    <!-- Context modal -->
+    <div id="contextModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter: blur(3px);align-items:center;justify-content:center;padding:20px;z-index:50;">
+        <div style="background:#0b1220;border:1px solid #1f2937;border-radius:14px;max-width:900px;width:100%;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)">
+                <div style="font-weight:700">Prompt & Output</div>
+                <button class="btn secondary" onclick="document.getElementById('contextModal').style.display='none'">Close</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:1px solid rgba(255,255,255,.06);flex:1;min-height:0;">
+                <div style="display:flex;flex-direction:column;min-width:0;border-right:1px solid rgba(255,255,255,.06)">
+                    <div style="padding:10px 12px;color:#9ca3af;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(255,255,255,.06)">Prompt</div>
+                    <pre style="margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-wrap:break-word;flex:1"><code id="modalPrompt"></code></pre>
+                </div>
+                <div style="display:flex;flex-direction:column;min-width:0;">
+                    <div style="padding:10px 12px;color:#9ca3af;font-size:12px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid rgba(255,255,255,.06)">Generated</div>
+                    <pre style="margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-wrap:break-word;flex:1"><code id="modalGenerated"></code></pre>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;padding:10px 12px;">
+                <button class="btn secondary" onclick="(async()=>{try{await navigator.clipboard.writeText(document.getElementById('modalPrompt').textContent)}catch(e){}})()">Copy Prompt</button>
+                <button class="btn secondary" onclick="(async()=>{try{await navigator.clipboard.writeText(document.getElementById('modalGenerated').textContent)}catch(e){}})()">Copy Output</button>
+                <button class="btn" onclick="document.getElementById('contextModal').style.display='none'">Done</button>
+            </div>
+        </div>
+    </div>
+
+    </div>
 
     <script>
-        document.getElementById('testForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        // Removed old submit handler that sent the same prompt many times
 
+        // Generate prompts using LLM (structured output)
+        document.getElementById('generatePromptsBtn').addEventListener('click', async () => {
             const apiUrl = document.getElementById('apiUrl').value;
             const apiKey = document.getElementById('apiKey').value;
-            const prompt = document.getElementById('prompt').value;
-            const numRequests = parseInt(document.getElementById('numRequests').value);
+            const model = document.getElementById('model').value;
+            const instructions = document.getElementById('promptInstructions').value.trim();
+            const numPrompts = parseInt(document.getElementById('numPrompts').value) || 1;
+
+            if (!apiUrl || !apiKey || !model) {
+                alert('Please provide API URL, API Key, and Model.');
+                return;
+            }
+            if (!instructions) {
+                alert('Please provide prompt generation instructions.');
+                return;
+            }
+
+            const generateBtn = document.getElementById('generatePromptsBtn');
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Generating...';
+            try {
+                const resp = await fetch('/api/generate-prompts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiUrl, apiKey, model, instructions, numPrompts })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `Failed to generate prompts (${resp.status})`);
+                }
+                const data = await resp.json();
+                const prompts = Array.isArray(data.prompts) ? data.prompts : [];
+                const textArea = document.getElementById('generatedPrompts');
+                textArea.value = prompts.join('\n');
+                document.getElementById('generatedPromptsCount').textContent = prompts.length ? `(${prompts.length})` : '';
+            } catch (err) {
+                alert(`Error: ${err.message}`);
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.textContent = 'Generate Prompts';
+            }
+        });
+
+        // Start test using generated prompts (one request per prompt)
+        document.getElementById('startWithPromptsBtn').addEventListener('click', async () => {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const apiKey = document.getElementById('apiKey').value;
             const model = document.getElementById('model').value;
             const maxTokens = parseInt(document.getElementById('maxTokens').value);
+            const raw = document.getElementById('generatedPrompts').value;
+            let prompts = raw.split('\n').map(s => s.trim()).filter(Boolean);
+            const appendFlag = document.getElementById('appendNoThink').checked;
+            if (appendFlag) {
+                prompts = prompts.map(p => p + "\n\\no_think");
+            }
+
+            if (!prompts.length) {
+                alert('No generated prompts found. Generate them first or paste them into the textarea.');
+                return;
+            }
 
             const tbody = document.querySelector('#resultsTable tbody');
-            tbody.innerHTML = ''; // Clear previous results
+            tbody.innerHTML = '';
 
             const response = await fetch('/api/test-concurrency', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, numRequests, apiUrl, apiKey, model, maxTokens })
+                body: JSON.stringify({ prompts, apiUrl, apiKey, model, maxTokens })
             });
 
             const reader = response.body.getReader();
@@ -121,7 +326,7 @@
                 if (done) break;
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
-                buffer = lines.pop(); // Keep incomplete line in buffer
+                buffer = lines.pop();
                 for (const line of lines) {
                     if (line.trim()) {
                         const data = JSON.parse(line);
@@ -137,32 +342,65 @@
             if (!row) {
                 row = document.createElement('tr');
                 row.setAttribute('data-id', data.id);
-                row.innerHTML = `<td>${data.id}</td><td></td><td></td><td></td><td></td>`;
+                row.innerHTML = `<td>${data.id}</td><td class="status-cell"></td><td class="prompt"><code></code></td><td class="generated"><code></code></td><td></td><td></td>`;
                 tbody.appendChild(row);
             }
             const cells = row.children;
-            cells[1].textContent = data.status;
-            cells[1].className = data.status;
+            cells[1].innerHTML = `<span class="badge">${data.status}</span>`;
+            cells[1].className = `status-cell ${data.status || ''}`;
+            
+            if (data.prompt) {
+                const p = String(data.prompt);
+                const pDisp = p.length > 100 ? p.slice(0, 100) + '…' : p;
+                cells[2].querySelector('code').textContent = pDisp;
+                cells[2].title = p;
+                row.dataset.prompt = p; // store full prompt for modal
+            }
             
             if (data.generatedText) {
                 // Show only last 100 characters
                 const text = data.generatedText;
-                cells[2].textContent = text.length > 100 ? '...' + text.slice(-100) : text;
-                cells[2].title = text; // Show full text on hover
+                const display = text.length > 100 ? '...' + text.slice(-100) : text;
+                cells[3].querySelector('code').textContent = display;
+                cells[3].title = text; // Show full text on hover
+                row.dataset.generated = text; // store full generated text for modal
             }
             
             if (data.tokensPerSecond !== undefined) {
-                cells[3].textContent = data.tokensPerSecond.toFixed(2);
+                cells[4].textContent = data.tokensPerSecond.toFixed(2);
             }
             
             if (data.totalTokens !== undefined) {
-                cells[4].textContent = data.totalTokens;
+                cells[5].textContent = data.totalTokens;
             }
             
             if (data.error) {
-                cells[2].textContent = data.error;
-                cells[2].className = 'error';
+                cells[3].querySelector('code').textContent = data.error;
+                cells[1].className = 'status-cell error';
+                cells[1].innerHTML = `<span class="badge">error</span>`;
             }
+        }
+
+        // Right-click context menu modal for full prompt + output
+        const tbody = document.querySelector('#resultsTable tbody');
+        tbody.addEventListener('contextmenu', (e) => {
+            const tr = e.target.closest('tr');
+            if (!tr) return;
+            e.preventDefault();
+            const prompt = tr.dataset.prompt || '';
+            const generated = tr.dataset.generated || '';
+            openContextModal(prompt, generated);
+        });
+
+        function openContextModal(prompt, generated) {
+            const modal = document.getElementById('contextModal');
+            modal.querySelector('#modalPrompt').textContent = prompt || '(no prompt)';
+            modal.querySelector('#modalGenerated').textContent = generated || '(no output yet)';
+            modal.style.display = 'flex';
+        }
+
+        function closeContextModal() {
+            document.getElementById('contextModal').style.display = 'none';
         }
 
         // Clear button functionality
