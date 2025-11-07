@@ -108,11 +108,9 @@
         .table-wrapper {
             border: 1px solid var(--border);
             border-radius: 12px;
-            overflow: hidden;
+            overflow: visible; /* allow page to scroll, not the table */
             background: #0b1220;
             box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
-            max-height: 55vh;
-            overflow: auto;
         }
         table { border-collapse: separate; border-spacing: 0; width: 100%; }
         thead th {
@@ -147,6 +145,26 @@
 
         .header-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 6px 0 12px; }
         .muted { color: var(--muted); font-size: 13px; }
+        /* Floating tooltip for full text */
+        .tooltip {
+            position: fixed;
+            pointer-events: none;
+            background: #1f2937;
+            color: #e5e7eb;
+            font-size: 12px;
+            padding: 6px 8px;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            max-width: 420px;
+            line-height: 1.35;
+            white-space: pre-wrap;
+            word-break: break-word;
+            box-shadow: 0 4px 16px rgba(0,0,0,.4);
+            z-index: 100;
+            opacity: 0;
+            transition: opacity .12s ease;
+            backdrop-filter: blur(4px);
+        }
     </style>
 </head>
 
@@ -353,7 +371,7 @@
                 const p = String(data.prompt);
                 const pDisp = p.length > 100 ? p.slice(0, 100) + '…' : p;
                 cells[2].querySelector('code').textContent = pDisp;
-                cells[2].title = p;
+                cells[2].dataset.full = p; // store full prompt for tooltip
                 row.dataset.prompt = p; // store full prompt for modal
             }
             
@@ -362,7 +380,7 @@
                 const text = data.generatedText;
                 const display = text.length > 100 ? '...' + text.slice(-100) : text;
                 cells[3].querySelector('code').textContent = display;
-                cells[3].title = text; // Show full text on hover
+                cells[3].dataset.full = text; // full generated text for tooltip
                 row.dataset.generated = text; // store full generated text for modal
             }
             
@@ -376,6 +394,7 @@
             
             if (data.error) {
                 cells[3].querySelector('code').textContent = data.error;
+                cells[3].dataset.full = data.error;
                 cells[1].className = 'status-cell error';
                 cells[1].innerHTML = `<span class="badge">error</span>`;
             }
@@ -408,6 +427,54 @@
             const tbody = document.querySelector('#resultsTable tbody');
             tbody.innerHTML = '';
         });
+
+        // Robust tooltip logic (replaces unreliable native title)
+        const tooltipEl = document.createElement('div');
+        tooltipEl.className = 'tooltip';
+        document.body.appendChild(tooltipEl);
+        let tooltipTarget = null;
+
+        function showTooltip(target, text) {
+            if (!text) return;
+            tooltipEl.textContent = text;
+            tooltipEl.style.opacity = '1';
+            tooltipTarget = target;
+        }
+        function hideTooltip() {
+            tooltipEl.style.opacity = '0';
+            tooltipTarget = null;
+        }
+        function positionTooltip(e) {
+            if (!tooltipTarget) return;
+            const pad = 12;
+            let x = e.clientX + pad;
+            let y = e.clientY + pad;
+            const rect = tooltipEl.getBoundingClientRect();
+            if (x + rect.width > window.innerWidth - pad) x = e.clientX - rect.width - pad;
+            if (y + rect.height > window.innerHeight - pad) y = e.clientY - rect.height - pad;
+            tooltipEl.style.left = x + 'px';
+            tooltipEl.style.top = y + 'px';
+        }
+
+        document.addEventListener('mousemove', positionTooltip);
+        document.querySelector('#resultsTable').addEventListener('mouseover', (e) => {
+            const cell = e.target.closest('td.generated, td.prompt');
+            if (!cell) return;
+            const full = cell.dataset.full || cell.textContent.trim();
+            if (full && full.length > 0) {
+                showTooltip(cell, full);
+            }
+        });
+        document.querySelector('#resultsTable').addEventListener('mouseout', (e) => {
+            const to = e.relatedTarget;
+            if (!tooltipTarget) return;
+            if (!to || !tooltipTarget.contains(to)) {
+                hideTooltip();
+            }
+        });
+        // Hide tooltip on scroll or context menu open
+        window.addEventListener('scroll', hideTooltip, { passive: true });
+        document.addEventListener('contextmenu', hideTooltip);
     </script>
 </body>
 
