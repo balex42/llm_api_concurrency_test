@@ -72,7 +72,11 @@ Prompt generation uses structured outputs when supported:
 
 ## Notes
 
-- Concurrency equals the number of prompts you provide. You can tune parallelism separately with the Concurrency field (defaults to 20). If you generate hundreds of prompts, they will be processed in waves respecting the concurrency limit.
+- Concurrency equals the number of prompts you provide. You can tune parallelism separately with the Concurrency field (default: 0 — meaning "all prompts at once"). If you generate hundreds of prompts, they will be processed in waves when a positive concurrency value is supplied, otherwise the app will attempt to open all streams simultaneously.
+
+Defaults:
+- Concurrency: 0 (all prompts at once)
+- Max Tokens: 10000 (unless you override it)
 
 Safety note:
 - Large batches can trigger provider rate limits or timeouts. If you see errors or slowdowns, reduce Concurrency or split batches. As a rule of thumb, keep prompts <= Concurrency × 5 per run for best stability.

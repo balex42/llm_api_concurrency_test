@@ -100,9 +100,18 @@ app.post('/api/test-concurrency', async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields: prompts[], apiUrl, apiKey, model' });
     }
 
-    const maxTokensValue = maxTokens || 100;
+    // Default max tokens to a large value unless provided
+    const maxTokensValue = maxTokens || 10000;
     const count = prompts.length;
-    const maxParallel = Math.max(1, Math.min(count, Number(concurrency) || 20));
+    // Interpret concurrency: 0 means "all prompts at once" per user request.
+    const concurrencyNum = Number.isFinite(Number(concurrency)) ? Number(concurrency) : 0;
+    let maxParallel;
+    if (concurrencyNum === 0) {
+        maxParallel = count; // all at once
+    } else {
+        // clamp between 1 and count
+        maxParallel = Math.max(1, Math.min(count, Math.floor(concurrencyNum)));
+    }
 
     res.setHeader('Content-Type', 'application/x-ndjson');
     res.setHeader('Cache-Control', 'no-cache');
