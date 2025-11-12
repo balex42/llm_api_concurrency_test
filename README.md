@@ -88,5 +88,5 @@ Safety note:
 Run the container with Podman:
 
 ```bash
-podman run --rm -p 3000:3000 -e PORT=3000 llm_api_concurrency_test:latest
+podman run --rm -p 3000:3000 ghcr.io/balex42/llm_api_concurrency_test:latest
 ```
