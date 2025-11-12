@@ -82,3 +82,66 @@ Safety note:
 - Large batches can trigger provider rate limits or timeouts. If you see errors or slowdowns, reduce Concurrency or split batches. As a rule of thumb, keep prompts <= Concurrency × 5 per run for best stability.
 - Use the “Append \no_think” checkbox to inhibit reasoning on Qwen models by appending a newline + `\no_think` to each prompt.
 - Hovering over the prompt or generated text cells shows a tooltip with the full content; use right‑click for the scrollable modal.
+
+## Docker / Podman
+
+I added a `Dockerfile` at the repository root so you can build and run the app in a container. The image exposes port 3000 (the app default).
+
+Build with Podman (local):
+
+```bash
+# build local image
+podman build -t llm_api_concurrency_test:latest -f Dockerfile .
+
+# run the container and map port 3000
+podman run --rm -p 3000:3000 -e PORT=3000 llm_api_concurrency_test:latest
+```
+
+If you want to push/pull from GitHub Container Registry (GHCR):
+
+```bash
+# tag the image for GHCR (replace <OWNER> and <REPO> as needed)
+podman tag llm_api_concurrency_test:latest ghcr.io/<OWNER>/<REPO>:latest
+
+# login to ghcr using a PAT with `write:packages` and `read:packages` (recommended) or use a token stored in $CR_PAT
+echo $CR_PAT | podman login ghcr.io -u <USERNAME> --password-stdin
+
+# push
+podman push ghcr.io/<OWNER>/<REPO>:latest
+
+# run pulled image
+podman run --rm -p 3000:3000 ghcr.io/<OWNER>/<REPO>:latest
+```
+
+Notes:
+- The `Dockerfile` uses Node 18 (alpine) and runs `node server.js`.
+- The app listens on port 3000 by default; you can override the `PORT` env when running the container.
+
+## Automated builds and GHCR (GitHub Container Registry)
+
+A GitHub Actions workflow has been added at `.github/workflows/ghcr.yml`. It builds the container and pushes it to GHCR on pushes to the `main` branch (and can also be triggered manually).
+
+What the workflow does:
+- Checks out the repo
+- Sets up buildx and QEMU for multi-platform builds
+- Logs into `ghcr.io` using `GITHUB_TOKEN`
+- Builds and pushes image tags: `ghcr.io/<owner>/<repo>:latest` and `ghcr.io/<owner>/<repo>:<sha>`
+
+Configuration / permissions you may need:
+
+1. Repository permissions: Go to Settings → Actions → General and ensure "Workflow permissions" allows workflows to read and write (so the provided `GITHUB_TOKEN` can push to packages). Set "Read and write permissions" for the token.
+2. Packages permissions: In some organizations you may need to allow GitHub Actions to publish packages. Check Settings → Packages / Package settings for repository/org-level controls.
+3. If `GITHUB_TOKEN` does not meet your policy or you prefer a PAT, create a Personal Access Token with at least `write:packages` and `read:packages`, then add it to repo Secrets (for example `GHCR_TOKEN`) and update the workflow to use that secret instead of `GITHUB_TOKEN` for `docker/login-action`.
+
+Example of swapping to a PAT in the workflow:
+
+```yaml
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+```
+
+If you want me to customize the workflow (add tags, releases, branch filters, or upload the image on tags only), tell me how you'd like it to behave and I can update the workflow.
