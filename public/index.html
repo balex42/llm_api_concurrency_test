@@ -201,7 +201,7 @@
         <textarea id="generatedPrompts" rows="6" placeholder="Generated prompts will appear here, one per line..."></textarea>
 
         <label for="appendNoThink" style="display:flex;align-items:center;gap:8px;margin-top:10px;">
-            <input type="checkbox" id="appendNoThink"> Append "\\no_think" to each prompt (newline + \\no_think) — useful to disable reasoning on Qwen
+            <input type="checkbox" id="appendNoThink"> Append "/no_think" to each prompt (newline + /no_think) — useful to disable reasoning on Qwen
         </label>
 
     <!-- Removed old single-prompt + numRequests inputs -->
@@ -337,7 +337,7 @@
             let prompts = raw.split('\n').map(s => s.trim()).filter(Boolean);
             const appendFlag = document.getElementById('appendNoThink').checked;
             if (appendFlag) {
-                prompts = prompts.map(p => p + "\n\\no_think");
+                prompts = prompts.map(p => p + "\n/no_think");
             }
 
             if (!prompts.length) {

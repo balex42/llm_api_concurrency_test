@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Generate prompts first using structured output (json schema) with fallback
+// Generate prompts using structured output (json schema) — strict mode, no fallback
 app.post('/api/generate-prompts', async (req, res) => {
     const { apiUrl, apiKey, model, instructions, numPrompts } = req.body;
 
@@ -45,7 +45,7 @@ app.post('/api/generate-prompts', async (req, res) => {
         }
     };
 
-    // First attempt: structured output via response_format json_schema (OpenAI-compatible)
+    // Structured output via response_format json_schema (OpenAI-compatible). Strictly validate.
     try {
         const resp = await axios.post(`${apiUrl}/v1/chat/completions`, {
             model,
@@ -58,37 +58,33 @@ app.post('/api/generate-prompts', async (req, res) => {
             stream: false
         }, { headers });
 
-        const content = resp.data?.choices?.[0]?.message?.content;
+        const content = resp.data?.choices?.[0]?.message?.content ?? '';
         let parsed;
         try {
-            parsed = content && JSON.parse(content);
-        } catch (_) {
-            // Try to strip code fences if present
-            const stripped = String(content || '').replace(/^```(?:json)?\n|```$/g, '').trim();
-            parsed = JSON.parse(stripped);
+            parsed = JSON.parse(content);
+        } catch {
+            return res.status(422).json({ error: 'Invalid JSON returned by provider' });
         }
-        const prompts = Array.isArray(parsed?.prompts) ? parsed.prompts : [];
-        return res.json({ prompts });
-    } catch (err) {
-        // Fallback: ask for strict JSON without schema
+
+        // Validate against the provided JSON Schema
+        let Ajv;
         try {
-            const resp2 = await axios.post(`${apiUrl}/v1/chat/completions`, {
-                model,
-                temperature: 0.7,
-                messages: [
-                    { role: 'system', content: 'Return ONLY valid JSON with shape {"prompts": string[]} — no prose, no code fences.' },
-                    { role: 'user', content: userPrompt }
-                ],
-                stream: false
-            }, { headers });
-            const content2 = resp2.data?.choices?.[0]?.message?.content;
-            const stripped2 = String(content2 || '').replace(/^```(?:json)?\n|```$/g, '').trim();
-            const parsed2 = JSON.parse(stripped2);
-            const prompts2 = Array.isArray(parsed2?.prompts) ? parsed2.prompts : [];
-            return res.json({ prompts: prompts2 });
-        } catch (err2) {
-            return res.status(500).json({ error: `Prompt generation failed: ${err2?.response?.data?.error?.message || err2.message}` });
+            Ajv = require('ajv');
+        } catch {
+            return res.status(500).json({ error: 'JSON Schema validation requires "ajv". Install with: npm i ajv' });
         }
+        const ajv = new Ajv({ allErrors: true, strict: false });
+        const validate = ajv.compile(jsonSchema.schema);
+        const valid = validate(parsed);
+        if (!valid) {
+            return res.status(422).json({ error: 'Response does not conform to schema', details: validate.errors });
+        }
+
+        return res.json({ prompts: parsed.prompts });
+    } catch (err) {
+        const providerMsg = err?.response?.data?.error?.message || err?.message || 'Unknown error';
+        const status = err?.response?.status || 502;
+        return res.status(status).json({ error: `Prompt generation failed: ${providerMsg}` });
     }
 });
 
